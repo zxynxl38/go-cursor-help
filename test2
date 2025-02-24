@@ -1,0 +1,296 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CrudIslemler.Data;
+using CrudIslemler.Models;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using System.IO;
+
+namespace CrudIslemler.Controllers.Admin
+{
+
+    
+    [Route("Admin/[controller]")]
+    public class ProcessController : Controller
+    {
+        private readonly AppDbContext _context;
+
+        public ProcessController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [Route("")]
+        [Route("Index")]
+        public async Task<IActionResult> Index()
+        {
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            return View("~/Views/Admin/Process/Index.cshtml", processHeader); // Tam yol ile görünümü belirtin
+        }
+
+        #region Process Header CRUD
+        [HttpGet]
+        [Route("GetHeader")]
+        public async Task<JsonResult> GetHeader()
+        {
+            try
+            {
+                var header = await _context.ProcessHeaders.FirstOrDefaultAsync();
+                return Json(new { success = true, data = header });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Veriler alınırken bir hata oluştu." });
+            }
+        }
+
+        [HttpPost]
+        [Route("UpdateProcessHeader")]
+        public async Task<JsonResult> UpdateProcessHeader([FromBody] ProcessHeader model)
+        {
+            try
+            {
+                var header = await _context.ProcessHeaders.FirstOrDefaultAsync();
+                if (header == null)
+                {
+                    _context.ProcessHeaders.Add(model);
+                }
+                else
+                {
+                    header.MainTitle = model.MainTitle;
+                    header.SubTitle = model.SubTitle;
+                    header.Description = model.Description;
+                    header.ImagePath1 = model.ImagePath1;
+                    header.ImagePath2 = model.ImagePath2;
+                    _context.ProcessHeaders.Update(header);
+                }
+
+                await _context.SaveChangesAsync();
+                return Json(new { success = true, message = "Process başlık bilgileri güncellendi." });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Güncelleme sırasında bir hata oluştu." });
+            }
+        }
+        #endregion
+
+        #region Process Item CRUD
+        [HttpGet]
+        [Route("GetProcesses")]
+        public async Task<JsonResult> GetProcesses()
+        {
+            try
+            {
+                var processes = await _context.ProcessItems.OrderBy(x => x.OrderNo).ToListAsync();
+                return Json(new { success = true, data = processes });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Veriler alınırken bir hata oluştu." });
+            }
+        }
+
+        [HttpGet]
+        [Route("GetProcess/{id}")]
+        public async Task<JsonResult> GetProcess(int id)
+        {
+            try
+            {
+                var process = await _context.ProcessItems.FindAsync(id);
+                return Json(new { success = true, data = process });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Veri alınırken bir hata oluştu." });
+            }
+        }
+
+ [HttpPost]
+[Route("AddProcess")]
+public async Task<JsonResult> AddProcess([FromBody] ProcessItem model)
+{
+    try
+    {
+        if (model == null)
+        {
+            return Json(new { success = false, error = "Model boş." });
+        }
+
+        await _context.ProcessItems.AddAsync(model);
+        await _context.SaveChangesAsync();
+        return Json(new { success = true, message = "Process başarıyla eklendi." });
+    }
+    catch (Exception ex)
+    {
+        return Json(new { success = false, error = "Ekleme sırasında bir hata oluştu." });
+    }
+}
+
+        [HttpPost]
+        [Route("UpdateProcess")]
+        public async Task<JsonResult> UpdateProcess([FromBody] ProcessItem model)
+        {
+            try
+            {
+                _context.ProcessItems.Update(model);
+                await _context.SaveChangesAsync();
+                return Json(new { success = true, message = "Process başarıyla güncellendi." });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Güncelleme sırasında bir hata oluştu." });
+            }
+        }
+
+        [HttpPost]
+        [Route("DeleteProcess/{id}")]
+        public async Task<JsonResult> DeleteProcess(int id)
+        {
+            try
+            {
+                var process = await _context.ProcessItems.FindAsync(id);
+                if (process != null)
+                {
+                    _context.ProcessItems.Remove(process);
+                    await _context.SaveChangesAsync();
+                    return Json(new { success = true, message = "Process başarıyla silindi." });
+                }
+                return Json(new { success = false, error = "Process bulunamadı." });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = "Silme sırasında bir hata oluştu." });
+            }
+        }
+        #endregion
+
+        [HttpPost]
+        [Route("UploadImage")]
+        public async Task<JsonResult> UploadImage(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return Json(new { success = false, error = "Dosya boş." });
+            }
+
+            var fileExtension = Path.GetExtension(file.FileName); // Orijinal uzantıyı al
+            var uniqueFileName = $"{Guid.NewGuid()}{fileExtension}"; // Benzersiz dosya adı oluştur
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/hizmetler", uniqueFileName);
+
+            // Eski resmi sil
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            if (processHeader != null && !string.IsNullOrEmpty(processHeader.ImagePath1))
+            {
+                var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", processHeader.ImagePath1.TrimStart('/'));
+                if (System.IO.File.Exists(oldFilePath))
+                {
+                    System.IO.File.Delete(oldFilePath); // Eski resmi sil
+                }
+            }
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Veritabanına kaydetme işlemi
+            if (processHeader != null)
+            {
+                processHeader.ImagePath1 = $"/uploads/hizmetler/{uniqueFileName}"; // Benzersiz ismi kullan
+                _context.ProcessHeaders.Update(processHeader);
+            }
+            else
+            {
+                processHeader = new ProcessHeader
+                {
+                    ImagePath1 = $"/uploads/hizmetler/{uniqueFileName}" // Benzersiz ismi kullan
+                };
+                _context.ProcessHeaders.Add(processHeader);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true, filePath = $"/uploads/hizmetler/{uniqueFileName}" });
+        }
+
+        [HttpPost]
+        [Route("UploadImage2")]
+        public async Task<JsonResult> UploadImage2(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return Json(new { success = false, error = "Dosya boş." });
+            }
+
+            var fileExtension = Path.GetExtension(file.FileName); // Orijinal uzantıyı al
+            var uniqueFileName = $"{Guid.NewGuid()}{fileExtension}"; // Benzersiz dosya adı oluştur
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/hizmetler", uniqueFileName);
+
+            // Eski resmi sil
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            if (processHeader != null && !string.IsNullOrEmpty(processHeader.ImagePath2))
+            {
+                var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", processHeader.ImagePath2.TrimStart('/'));
+                if (System.IO.File.Exists(oldFilePath))
+                {
+                    System.IO.File.Delete(oldFilePath); // Eski resmi sil
+                }
+            }
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // Veritabanına kaydetme işlemi
+            if (processHeader != null)
+            {
+                processHeader.ImagePath2 = $"/uploads/hizmetler/{uniqueFileName}"; // Benzersiz ismi kullan
+                _context.ProcessHeaders.Update(processHeader);
+            }
+            else
+            {
+                processHeader = new ProcessHeader
+                {
+                    ImagePath2 = $"/uploads/hizmetler/{uniqueFileName}" // Benzersiz ismi kullan
+                };
+                _context.ProcessHeaders.Add(processHeader);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Json(new { success = true, filePath = $"/uploads/hizmetler/{uniqueFileName}" });
+        }
+
+        [HttpGet]
+        [Route("GetCurrentImage")]
+        public async Task<JsonResult> GetCurrentImage()
+        {
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            return Json(new { success = true, filePath = processHeader?.ImagePath1 });
+        }
+
+        [HttpGet]
+        [Route("GetCurrentImage2")]
+        public async Task<JsonResult> GetCurrentImage2()
+        {
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            return Json(new { success = true, filePath = processHeader?.ImagePath2 });
+        }
+
+        [HttpGet]
+        [Route("GetProcessHeader")]
+        public async Task<JsonResult> GetProcessHeader()
+        {
+            var processHeader = await _context.ProcessHeaders.FirstOrDefaultAsync();
+            if (processHeader == null)
+            {
+                return Json(new { success = false, error = "Veri bulunamadı." });
+            }
+            return Json(new { success = true, data = processHeader });
+        }
+    }
+}
