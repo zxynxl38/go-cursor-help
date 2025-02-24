@@ -1,0 +1,530 @@
+$(document).ready(function () {
+    loadProcesses();
+    initializeToastr();
+    
+    // Resim 1'i getir
+    $.ajax({
+        url: '/Admin/Process/GetCurrentImage',
+        type: 'GET',
+        success: function(response) {
+            if (response.success) {
+                $('#imagePath1').attr('src', response.filePath + '?t=' + new Date().getTime()).show();
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Resim yüklenirken hata:', error);
+        }
+    });
+
+    // Resim 2'yi getir
+    $.ajax({
+        url: '/Admin/Process/GetCurrentImage2',
+        type: 'GET',
+        success: function(response) {
+            if (response.success) {
+                $('#imagePath2').attr('src', response.filePath + '?t=' + new Date().getTime()).show();
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Resim 2 yüklenirken hata:', error);
+        }
+    });
+
+    // Sayfa yüklendiğinde mevcut başlık verilerini al
+    $.ajax({
+        url: '/Admin/Process/GetProcessHeader',
+        type: 'GET',
+        success: function (response) {
+            console.log('AJAX yanıtı:', response); // Yanıtı konsola yazdır
+            if (response.success) {
+                $('#mainTitle').val(response.data.mainTitle);
+                $('#subTitle').val(response.data.subTitle);
+                $('#description').val(response.data.description);
+            } else {
+                console.error('Veri yüklenirken hata:', response.error);
+            }
+        },
+        error: function (xhr, status, error) {
+            console.error('AJAX isteği sırasında hata:', error);
+        }
+    });
+
+    // Resim yükleme butonuna tıkladığınızda dosya input'unu tetikle
+    $('#uploadButton').click(function () {
+        $('#imageUpload').click(); // Dosya input'unu tetikle
+    });
+
+    // Dosya seçildiğinde popup'ı aç
+    $('#imageUpload').change(function (event) {
+        var file = event.target.files[0];
+        console.log('Seçilen dosya:', file); // Dosya nesnesini konsola yazdır
+        if (file) {
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                // Popup'ı aç ve resmi göster
+                $('#previewImage').attr('src', e.target.result); // Kırpılacak resim için yeni id
+                $('#cropPopup').show();
+            };
+            reader.readAsDataURL(file);
+        } else {
+            console.error('Dosya seçilmedi.');
+            toastr.error('Lütfen bir dosya seçin.'); // Hata bildirimi göster
+        }
+    });
+
+    // Kırpma işlemi için buton
+    $('#confirmCrop').click(function () {
+        var formData = new FormData();
+        var file = $('#imageUpload')[0].files[0]; // Seçilen dosyayı al
+        if (file) {
+            formData.append('file', file); // FormData'ya dosyayı ekle
+
+            // FormData içeriğini konsola yazdır
+            console.log('FormData içeriği:', formData.get('file')); // Dosya bilgilerini yazdır
+
+            $.ajax({
+                url: '/Admin/Process/UploadImage',
+                type: 'POST',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function (response) {
+                    if (response.success) {
+                        $('#cropImage').attr('src', response.filePath).show();
+                        alert('Resim başarıyla yüklendi!');
+                    } else {
+                        console.error('Resim yüklenirken hata:', response.error);
+                        toastr.error('Resim yüklenirken hata: ' + response.error); // Hata bildirimi göster
+                    }
+                },
+                error: function (xhr, status, error) {
+                    alert('AJAX isteği sırasında hata: ' + error);
+                }
+            });
+        } else {
+            console.error('Dosya seçilmedi.');
+            toastr.error('Lütfen bir dosya seçin.'); // Hata bildirimi göster
+        }
+
+        $('#cropPopup').hide(); // Popup'ı kapat
+        $('#cropPopup').attr('aria-hidden', 'true'); // Modal kapandığında aria-hidden'ı true yap
+    });
+
+    // İptal butonu
+    $('#cancelCrop').click(function () {
+        $('#cropPopup').hide(); // Popup'ı kapat
+        $('#cropPopup').attr('aria-hidden', 'true'); // Modal kapandığında aria-hidden'ı true yap
+    });
+
+    // Modal açıldığında crop boyutlarını güncelle
+    $('#cropModal').on('shown.bs.modal', function () {
+        if (cropper) {
+            const imageData = cropper.getImageData();
+            $('#imageWidth').val(Math.round(imageData.naturalWidth));
+            $('#imageHeight').val(Math.round(imageData.naturalHeight));
+        }
+    });
+
+    // Form submit olayını engelle ve updateHeader fonksiyonunu çağır
+    $('#headerForm').off('submit').on('submit', function(e) {
+        e.preventDefault(); // Event parametresini 'e' olarak aldık
+        
+        const data = {
+            mainTitle: $('#mainTitle').val(),
+            subTitle: $('#subTitle').val(),
+            description: $('#description').val(),
+            imagePath1: $('#imagePath1').attr('src'),
+            imagePath2: $('#imagePath2').val()
+        };
+
+        // Validasyon kontrolü
+        if (!data.mainTitle || !data.subTitle || !data.description) {
+            toastr.warning('Lütfen tüm alanları doldurunuz.');
+            return;
+        }
+
+        console.log('Gönderilen veri:', data); // Debug için
+
+        $.ajax({
+            url: '/Admin/Process/UpdateProcessHeader', // Doğru URL
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                console.log('Başarılı yanıt:', response); // Debug için
+                if (response.success) {
+                    toastr.success('Başlık bilgileri başarıyla güncellendi.');
+                } else {
+                    toastr.error(response.message || 'Güncelleme sırasında bir hata oluştu.');
+                }
+            },
+            error: function(xhr, status, error) {
+                console.log('Hata:', error); // Debug için
+                toastr.error('İşlem sırasında bir hata oluştu: ' + error);
+            }
+        });
+    });
+});
+
+// Toastr ayarları
+function initializeToastr() {
+    toastr.options = {
+        closeButton: true,
+        debug: false,
+        newestOnTop: true,
+        progressBar: true,
+        positionClass: "toast-top-right",
+        preventDuplicates: false,
+        onclick: null,
+        showDuration: "300",
+        hideDuration: "1000",
+        timeOut: "5000",
+        extendedTimeOut: "1000",
+        showEasing: "swing",
+        hideEasing: "linear",
+        showMethod: "fadeIn",
+        hideMethod: "fadeOut"
+    };
+}
+
+// Process işlemleri
+function loadProcesses() {
+    $.ajax({
+        url: '/Admin/Process/GetProcesses',
+        method: 'GET',
+        success: function (response) {
+            if (response.success) {
+                var tbody = $("table tbody");
+                tbody.empty();
+
+                if (response.data && response.data.length > 0) {
+                    response.data.forEach(function (process) {
+                        tbody.append(`
+                            <tr>
+                                <td>${process.orderNo}</td>
+                                <td>${process.title}</td>
+                                <td>${process.description}</td>
+                                <td><img src="${process.imagePath}" style="max-height: 100px;" /></td>
+                                <td>${process.position}</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-primary" onclick="edit(${process.id})" title="Düzenle">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteProcess(${process.id})" title="Sil">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `);
+                    });
+                } else {
+                    tbody.append(`
+                        <tr>
+                            <td colspan="6" class="text-center">Henüz process eklenmemiş.</td>
+                        </tr>
+                    `);
+                }
+            }
+        }
+    });
+}
+
+function openAddModal() {
+    $('#addForm')[0].reset();
+    $('#addModal').modal('show');
+}
+
+function save() {
+    const data = {
+        title: $('#txt-title').val().trim(),
+        description: $('#txt-description').val().trim(),
+        orderNo: parseInt($('#txt-order').val()),
+        imagePath: $('#txt-image').val().trim(), // Resim yolunu al
+        position: $('#txt-position').val() // Konumu al
+    };
+
+    // Validasyon kontrolü
+    if (!data.title || !data.description || !data.orderNo || !data.imagePath || !data.position) {
+        toastr.warning('Lütfen tüm alanları doldurunuz.');
+        return;
+    }
+
+    $.ajax({
+        url: '/Admin/Process/AddProcess', // Doğru URL
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data), // Verileri JSON formatında gönder
+        success: function (response) {
+            if (response.success) {
+                $('#addModal').modal('hide');
+                loadProcesses(); // Yeni eklenen processleri yükle
+                toastr.success(response.message);
+            } else {
+                toastr.error(response.error);
+            }
+        },
+        error: function (xhr, status, error) {
+            console.error('Hata:', error); // Hata mesajını konsola yazdır
+            toastr.error('Ekleme sırasında bir hata oluştu.');
+        }
+    });
+}
+
+function edit(id) {
+    $.ajax({
+        url: `/Admin/Process/GetProcess/${id}`,
+        method: 'GET',
+        success: function (response) {
+            if (response.success) {
+                const process = response.data;
+                $('#edit-id').val(process.id);
+                $('#edit-title').val(process.title);
+                $('#edit-description').val(process.description);
+                $('#edit-order').val(process.orderNo);
+                $('#editModal').modal('show');
+            }
+        }
+    });
+}
+
+function update() {
+    const data = {
+        id: parseInt($('#edit-id').val()),
+        title: $('#edit-title').val().trim(),
+        description: $('#edit-description').val().trim(),
+        orderNo: parseInt($('#edit-order').val()),
+        // İlgili diğer alanlar eklenebilir
+    };
+
+    if (!data.title || !data.description || !data.orderNo) {
+        toastr.warning('Lütfen tüm alanları doldurunuz.');
+        return;
+    }
+
+    $.ajax({
+        url: '/Admin/Process/UpdateProcess',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function (response) {
+            if (response.success) {
+                $('#editModal').modal('hide');
+                loadProcesses();
+                toastr.success(response.message);
+            } else {
+                toastr.error(response.error);
+            }
+        }
+    });
+}
+
+function deleteProcess(id) {
+    if (confirm('Bu processi silmek istediğinize emin misiniz?')) {
+        $.ajax({
+            url: `/Admin/Process/DeleteProcess/${id}`,
+            method: 'POST',
+            success: function (response) {
+                if (response.success) {
+                    loadProcesses();
+                    toastr.success(response.message);
+                } else {
+                    toastr.error(response.error);
+                }
+            }
+        });
+    }
+}
+
+let cropper = null;
+let selectedImageExtension = ''; // Seçilen resmin uzantısını saklamak için değişken
+
+function openImageSelector(isImage2 = false) {
+    $('#currentImageTarget').val(isImage2 ? 'image2' : 'image1');
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            selectedImageExtension = file.name.split('.').pop(); // Seçilen resmin uzantısını al
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                $('#cropImage').attr('data-filename', file.name);
+                initCropper(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+    fileInput.click();
+}
+
+function initCropper(imageData) {
+    const tempImage = new Image();
+    tempImage.onload = function() {
+        const naturalWidth = this.width;
+        const naturalHeight = this.height;
+        
+        $('#cropImage').attr('src', imageData);
+        $('#cropModal').modal('show');
+
+        $('#cropModal').on('shown.bs.modal', function() {
+            $('#imageWidth').val(naturalWidth);
+            $('#imageHeight').val(naturalHeight);
+        });
+
+        if (cropper) {
+            cropper.destroy();
+        }
+
+        const containerWidth = 800;
+        const containerHeight = 600;
+
+        cropper = new Cropper($('#cropImage')[0], {
+            viewMode: 1,
+            preview: '.preview-container',
+            responsive: true,
+            restore: false,
+            autoCrop: true,
+            autoCropArea: 0.5,
+            movable: true,
+            rotatable: true,
+            scalable: true,
+            zoomable: true,
+            zoomOnTouch: true,
+            zoomOnWheel: true,
+            minContainerWidth: containerWidth,
+            minContainerHeight: containerHeight,
+            dragMode: 'none',
+            guides: true,
+            center: true,
+            highlight: true,
+            background: true,
+            cropBoxResizable: true,
+            cropBoxMovable: true,
+            minCropBoxWidth: 10,
+            minCropBoxHeight: 10,
+            toggleDragModeOnDblclick: true,
+            aspectRatio: NaN,
+            ready() {
+                // Container boyutlarına göre ölçeklendirme
+                const containerData = cropper.getContainerData();
+                const imageData = cropper.getImageData();
+                const scale = Math.min(
+                    containerData.width / imageData.naturalWidth,
+                    containerData.height / imageData.naturalHeight
+                );
+                
+                if (scale < 1) {
+                    cropper.zoomTo(scale);
+                }
+
+                // Orijinal en-boy oranını koru
+                const aspectRatio = naturalWidth / naturalHeight;
+                
+                // Kırpma kutusunu orijinal en-boy oranıyla ayarla
+                const cropBoxData = {
+                    width: naturalWidth * scale * 0.8,
+                    height: (naturalWidth * scale * 0.8) / aspectRatio // Orijinal oranı koru
+                };
+                
+                // Kutuyu ortala
+                cropBoxData.left = (containerData.width - cropBoxData.width) / 2;
+                cropBoxData.top = (containerData.height - cropBoxData.height) / 2;
+                
+                cropper.setCropBoxData(cropBoxData);
+
+                // Input değerlerini güncelle
+                const data = cropper.getData();
+                $('#imageWidth').val(Math.round(data.width));
+                $('#imageHeight').val(Math.round(data.height));
+            },
+            crop(event) {
+                const data = event.detail;
+                $('#imageWidth').val(Math.round(data.width));
+                $('#imageHeight').val(Math.round(data.height));
+            }
+        });
+
+        // Input değişikliklerini dinle
+        $('#imageWidth, #imageHeight').on('change', function() {
+            const width = parseInt($('#imageWidth').val());
+            const height = parseInt($('#imageHeight').val());
+            
+            if (width > 0 && height > 0) {
+                cropper.setData({
+                    width: width,
+                    height: height
+                });
+            }
+        });
+    };
+    
+    tempImage.src = imageData;
+}
+
+function saveImage() {
+    if (!cropper) return;
+
+    // Orijinal ve mevcut boyutları al
+    const originalWidth = cropper.getImageData().naturalWidth;
+    const originalHeight = cropper.getImageData().naturalHeight;
+    const currentWidth = parseInt($('#imageWidth').val());
+    const currentHeight = parseInt($('#imageHeight').val());
+
+    // Kullanılacak boyutları belirle
+    const userWidth = (currentWidth === originalWidth) ? originalWidth : currentWidth;
+    const userHeight = (currentHeight === originalHeight) ? originalHeight : currentHeight;
+
+    const croppedCanvas = cropper.getCroppedCanvas();
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = userWidth;
+    finalCanvas.height = userHeight;
+    
+    const ctx = finalCanvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+    ctx.drawImage(
+        croppedCanvas,
+        0, 0,
+        croppedCanvas.width, croppedCanvas.height,
+        0, 0,
+        userWidth, userHeight
+    );
+
+    // Uzantıya göre blob oluştur
+    const imageFormat = selectedImageExtension === 'png' ? 'image/png' : 'image/jpeg'; // Uzantıya göre format belirle
+    finalCanvas.toBlob(function(blob) {
+        const formData = new FormData();
+        const isImage2 = $('#currentImageTarget').val() === 'image2';
+        const fileName = isImage2 ? `image2.${selectedImageExtension}` : `image.${selectedImageExtension}`; // Seçilen uzantıyı kullan
+
+        formData.append('file', blob, fileName);
+
+        const endpoint = isImage2 ? '/Admin/Process/UploadImage2' : '/Admin/Process/UploadImage';
+
+        $.ajax({
+            url: endpoint,
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    const imageElement = isImage2 ? '#imagePath2' : '#imagePath1';
+                    $(imageElement).attr('src', response.filePath + '?t=' + new Date().getTime()).show();
+                    $('#cropModal').modal('hide');
+                    cropper.destroy();
+                    cropper = null;
+                    toastr.success('Görsel başarıyla güncellendi.');
+                } else {
+                    toastr.error(response.message || 'Görsel yüklenirken bir hata oluştu.');
+                }
+            },
+            error: function(xhr, status, error) {
+                toastr.error('İşlem sırasında bir hata oluştu: ' + error);
+            }
+        });
+    }, imageFormat, 1.0); // Seçilen uzantıya göre formatı burada kullan
+}
+
+
